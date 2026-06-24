@@ -10,6 +10,8 @@
 # ============================================================================
 
 WIFI_INTERFACE=""
+readonly WIFI_BACKUP_FILE="/tmp/netboost_wifi_backup.conf"
+readonly WIFI_TXPOWER_BACKUP_FILE="/tmp/netboost_wifi_txpower_backup.conf" # Legacy cleanup path
 
 detect_wifi_interface() {
     WIFI_INTERFACE=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2}' | head -n 1 || true)
@@ -64,6 +66,10 @@ get_wifi_status() {
     print_kv "RX Bitrate"    "$rx_bitrate"
     print_kv "TX Bitrate"    "$tx_bitrate"
     print_kv "Power Save"    "$power_save"
+
+    local tx_power
+    tx_power=$(iw dev "$WIFI_INTERFACE" info 2>/dev/null | grep "txpower" | awk '{print $2, $3}' || true)
+    print_kv "TX Power (Diagnostics)" "${tx_power:-unknown}"
 }
 
 optimize_wifi() {
@@ -79,9 +85,17 @@ optimize_wifi() {
 
     log_header "Wi-Fi Adapter Optimization"
 
-    # 1. Disable power save
+    # 1. Disable power save and backup original state
     local current_ps
     current_ps=$(iw dev "$WIFI_INTERFACE" get power_save 2>/dev/null | awk '{print $3}' || true)
+    
+    if [[ -n "$current_ps" ]]; then
+        if [[ ! -f "$WIFI_BACKUP_FILE" ]]; then
+            echo "$current_ps" > "$WIFI_BACKUP_FILE"
+            log_info "Original Wi-Fi power save state ($current_ps) saved to $WIFI_BACKUP_FILE"
+        fi
+    fi
+
     if [[ "$current_ps" == "on" ]]; then
         iw dev "$WIFI_INTERFACE" set power_save off 2>/dev/null || true
         # Verify if it was successfully changed
@@ -108,13 +122,26 @@ reset_wifi() {
     if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
         detect_wifi_interface || return 1
         log_header "Wi-Fi Adapter Reset [DRY RUN]"
-        log_info "Would enable power save on interface: $WIFI_INTERFACE"
+        log_info "Would restore original Wi-Fi power save state from $WIFI_BACKUP_FILE if it exists, or default to 'on'"
+        log_info "Would clean up legacy TX power backup file $WIFI_TXPOWER_BACKUP_FILE if it exists"
         return 0
     fi
 
     require_root
     detect_wifi_interface || return 1
 
-    iw dev "$WIFI_INTERFACE" set power_save on 2>/dev/null || true
-    log_success "Power save re-enabled (default)."
+    # 1. Restore power save state
+    local target_ps="on"
+    if [[ -f "$WIFI_BACKUP_FILE" ]]; then
+        target_ps=$(cat "$WIFI_BACKUP_FILE" | tr -d '[:space:]')
+        rm -f "$WIFI_BACKUP_FILE"
+    fi
+    iw dev "$WIFI_INTERFACE" set power_save "$target_ps" 2>/dev/null || true
+    log_success "Power save restored to original state: $target_ps"
+
+    # 2. Clean up legacy TX power backup file if present
+    if [[ -f "$WIFI_TXPOWER_BACKUP_FILE" ]]; then
+        rm -f "$WIFI_TXPOWER_BACKUP_FILE"
+        log_success "Legacy Wi-Fi TX power backup file removed."
+    fi
 }

@@ -33,8 +33,15 @@ measure_dns_latency() {
 
 benchmark_dns_providers() {
     log_header "DNS Provider Benchmark"
-    log_info "Resolving google.com against each provider..."
+    log_info "Resolving multiple domains (3 queries each) against each provider to calculate average latency..."
     echo ""
+
+    local domains=(
+        "google.com"
+        "cloudflare.com"
+        "wikipedia.org"
+    )
+    local num_queries=3
 
     local fastest_name=""
     local fastest_time=99999
@@ -42,36 +49,83 @@ benchmark_dns_providers() {
     for provider in "${DNS_PROVIDERS[@]}"; do
         IFS=':' read -r name primary secondary <<< "$provider"
 
-        local time_ms
-        time_ms=$(measure_dns_latency "$primary")
+        local total_time=0
+        local success_count=0
 
-        local color="$GREEN"
-        if   (( time_ms > 100 )); then color="$RED"
-        elif (( time_ms > 50  )); then color="$YELLOW"
+        for domain in "${domains[@]}"; do
+            for ((i=1; i<=num_queries; i++)); do
+                local time_ms
+                time_ms=$(measure_dns_latency "$primary" "$domain")
+                if (( time_ms < 999 )); then
+                    total_time=$(( total_time + time_ms ))
+                    success_count=$(( success_count + 1 ))
+                fi
+            done
+        done
+
+        local avg_time=999
+        if (( success_count > 0 )); then
+            avg_time=$(( total_time / success_count ))
         fi
 
-        printf "  %-14s %-16s ${color}%d ms${NC}\n" "$name" "$primary" "$time_ms"
+        local color="$GREEN"
+        if   (( avg_time > 100 )); then color="$RED"
+        elif (( avg_time > 50  )); then color="$YELLOW"
+        fi
 
-        if (( time_ms < fastest_time )); then
-            fastest_time=$time_ms
+        local label_ms="${avg_time} ms"
+        if (( avg_time == 999 )); then
+            label_ms="TIMEOUT"
+        fi
+
+        printf "  %-14s %-16s ${color}%s${NC} (avg of %d successful queries)\n" \
+            "$name" "$primary" "$label_ms" "$success_count"
+
+        if (( avg_time < fastest_time )); then
+            fastest_time=$avg_time
             fastest_name=$name
         fi
     done
 
     echo ""
-    log_info "Fastest: ${BOLD}${fastest_name}${NC} (${fastest_time}ms)"
+    if (( fastest_time < 999 )); then
+        log_info "Fastest: ${BOLD}${fastest_name}${NC} (${fastest_time}ms avg)"
+    else
+        log_info "All providers timed out."
+    fi
 
     # Compare against current resolver
     local current_dns
-    current_dns=$(grep "nameserver" /etc/resolv.conf 2>/dev/null \
-        | grep -v "127.0.0" | head -n 1 | awk '{print $2}')
+    current_dns=$(awk '$1 == "nameserver" && $2 !~ /^127\.0\.0/ {print $2; exit}' /etc/resolv.conf 2>/dev/null || true)
     if [[ -z "$current_dns" ]]; then
         current_dns="127.0.0.53"
     fi
 
-    local current_time
-    current_time=$(measure_dns_latency "$current_dns")
-    print_kv "Current ($current_dns)" "${current_time}ms"
+    local current_total_time=0
+    local current_success_count=0
+
+    for domain in "${domains[@]}"; do
+        for ((i=1; i<=num_queries; i++)); do
+            local time_ms
+            time_ms=$(measure_dns_latency "$current_dns" "$domain")
+            if (( time_ms < 999 )); then
+                current_total_time=$(( current_total_time + time_ms ))
+                current_success_count=$(( current_success_count + 1 ))
+            fi
+        done
+    done
+
+    local current_avg_time=999
+    if (( current_success_count > 0 )); then
+        current_avg_time=$(( current_total_time / current_success_count ))
+    fi
+
+    local current_label_ms="${current_avg_time}ms"
+    if (( current_avg_time == 999 )); then
+        current_label_ms="TIMEOUT"
+    fi
+
+    print_kv "Current ($current_dns)" "$current_label_ms"
 }
 
 optimize_dns() {

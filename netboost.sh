@@ -26,6 +26,8 @@ source "${LIB_DIR}/monitor.sh"
 
 readonly VERSION="1.0.0"
 DRY_RUN=0
+FORCE_OPTIMIZE=0
+
 
 
 show_banner() {
@@ -79,6 +81,22 @@ cmd_optimize() {
     else
         require_root
         show_banner
+
+        if [[ "$FORCE_OPTIMIZE" -eq 0 ]]; then
+            echo -e "${BOLD}Optimization Summary:${NC}"
+            echo -e "  * ${BOLD}Wi-Fi:${NC} Disable power saving mode to reduce latency spikes."
+            echo -e "  * ${BOLD}TCP/Kernel:${NC} Tune kernel parameters (BBR congestion control, TCP windows, timeouts)."
+            echo -e "  * ${BOLD}DNS:${NC} Apply low-latency public resolvers (1.1.1.1, 1.0.0.1)."
+            echo -e "  * ${BOLD}QoS:${NC} Prioritize interactive traffic (DNS, SSH, ICMP, TCP ACKs)."
+            echo ""
+            read -r -p "Are you sure you want to apply these system-wide changes? [y/N]: " confirm
+            if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                log_warn "Optimization aborted by user."
+                exit 0
+            fi
+            echo ""
+        fi
+
         log_info "Applying all optimizations..."
     fi
 
@@ -153,22 +171,20 @@ main() {
     local command="${1:-help}"
     shift 2>/dev/null || true
 
-    local d="-"
-    local dd="${d}${d}dry-run"
-    local hh="${d}${d}help"
-    local vv="${d}${d}version"
-
-    if [[ "$command" == "$hh" ]]; then
+    if [[ "$command" =~ ^-{2}help$ ]]; then
         command="help"
-    elif [[ "$command" == "$vv" ]]; then
+    elif [[ "$command" =~ ^-{2}version$ ]]; then
         command="version"
     fi
 
     DRY_RUN=0
+    FORCE_OPTIMIZE=0
     local pass_args=()
     for arg in "$@"; do
-        if [[ "$arg" == "$dd" ]] || [[ "$arg" == "dry-run" ]] || [[ "$arg" == "-d" ]]; then
+        if [[ "$arg" =~ ^-{2}dry-run$ ]] || [[ "$arg" == "-d" ]]; then
             DRY_RUN=1
+        elif [[ "$arg" =~ ^-{2}yes$ ]] || [[ "$arg" =~ ^-{2}force$ ]] || [[ "$arg" == "-y" ]] || [[ "$arg" == "-f" ]]; then
+            FORCE_OPTIMIZE=1
         else
             pass_args+=("$arg")
         fi

@@ -35,6 +35,7 @@ backup_sysctl_params() {
         "net.ipv4.tcp_keepalive_intvl"
         "net.ipv4.tcp_keepalive_probes"
         "net.ipv4.tcp_fin_timeout"
+        "net.ipv4.tcp_notsent_lowat"
     )
 
     : > "$SYSCTL_BACKUP_FILE"
@@ -97,16 +98,20 @@ optimize_tcp() {
     apply_sysctl "net.ipv4.tcp_mtu_probing" "1" \
         "MTU probing enabled."
 
-    # Buffer sizes: min=4KB / default=128KB / max=6MB (read), 4MB (write)
-    # Sized for realistic Wi-Fi throughput with enough headroom for bursts.
-    apply_sysctl "net.ipv4.tcp_rmem" "4096 131072 6291456" \
-        "TCP read buffer optimized (4K/128K/6M)."
-    apply_sysctl "net.ipv4.tcp_wmem" "4096 65536 4194304" \
-        "TCP write buffer optimized (4K/64K/4M)."
-    apply_sysctl "net.core.rmem_max" "6291456" \
-        "Max socket read buffer set to 6MB."
-    apply_sysctl "net.core.wmem_max" "4194304" \
-        "Max socket write buffer set to 4MB."
+    # Buffer sizes: min=4KB / default=256KB / max=16MB (read), 16MB (write)
+    # Sized for claiming maximum bandwidth on high-speed networks.
+    apply_sysctl "net.ipv4.tcp_rmem" "4096 262144 16777216" \
+        "TCP read buffer optimized (4K/256K/16M)."
+    apply_sysctl "net.ipv4.tcp_wmem" "4096 131072 16777216" \
+        "TCP write buffer optimized (4K/128K/16M)."
+    apply_sysctl "net.core.rmem_max" "16777216" \
+        "Max socket read buffer set to 16MB."
+    apply_sysctl "net.core.wmem_max" "16777216" \
+        "Max socket write buffer set to 16MB."
+
+    # Limit unsent queued data to prevent socket bufferbloat and make BBR pacing highly responsive.
+    apply_sysctl "net.ipv4.tcp_notsent_lowat" "16384" \
+        "TCP notsent lowat optimized to 16KB."
 
     # Keepalive: check after 2 minutes, retry every 10s, give up after 6 retries
     apply_sysctl "net.ipv4.tcp_keepalive_time" "120" \
@@ -138,6 +143,7 @@ get_tcp_status() {
     print_kv "FIN Timeout"              "$(sysctl -n net.ipv4.tcp_fin_timeout 2>/dev/null)s"
     print_kv "Read Buffer (min/def/max)" "$(sysctl -n net.ipv4.tcp_rmem 2>/dev/null)"
     print_kv "Write Buffer (min/def/max)" "$(sysctl -n net.ipv4.tcp_wmem 2>/dev/null)"
+    print_kv "TCP Notsent Lowat"        "$(sysctl -n net.ipv4.tcp_notsent_lowat 2>/dev/null)"
 }
 
 reset_tcp() {
@@ -164,5 +170,6 @@ reset_tcp() {
         apply_sysctl "net.ipv4.tcp_keepalive_intvl" "75"           "Keepalive interval reset to 75s."
         apply_sysctl "net.ipv4.tcp_keepalive_probes" "9"           "Keepalive probes reset to 9."
         apply_sysctl "net.ipv4.tcp_fin_timeout" "60"               "FIN timeout reset to 60s."
+        apply_sysctl "net.ipv4.tcp_notsent_lowat" "4294967295"    "TCP notsent lowat reset to unlimited."
     fi
 }

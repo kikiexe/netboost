@@ -119,9 +119,11 @@ format_bytes_per_sec() {
     local bps="$1"
 
     if   (( bps >= 1048576 )); then
-        echo "$(echo "scale=1; $bps / 1048576" | bc) MB/s"
+        local val=$(( (bps * 10) / 1048576 ))
+        echo "$(( val / 10 )).$(( val % 10 )) MB/s"
     elif (( bps >= 1024 )); then
-        echo "$(echo "scale=1; $bps / 1024" | bc) KB/s"
+        local val=$(( (bps * 10) / 1024 ))
+        echo "$(( val / 10 )).$(( val % 10 )) KB/s"
     else
         echo "${bps} B/s"
     fi

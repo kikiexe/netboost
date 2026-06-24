@@ -137,6 +137,18 @@ setup_qos() {
 
     # TCP ACKs (small TCP packets, <= 128 bytes) -> Interactive
     # This is the most impactful rule: fast ACKs keep the download pipeline full.
+    #
+    # TECHNICAL WARNING & LIMITATIONS:
+    # 1. This filter uses stateless u32 matching. The 'nexthdr' offset keyword is
+    #    calculated dynamically by the kernel using the IP Header Length (IHL) field.
+    # 2. If a packet contains IP options (causing IHL to be > 20 bytes), standard
+    #    software paths should handle this correctly. However, some hardware offload
+    #    implementations or specific kernel versions might miscalculate 'nexthdr',
+    #    causing 'nexthdr+13' to point to incorrect TCP header data.
+    # 3. In the presence of rare IP options or non-TCP traffic that somehow matches the
+    #    stateless checks, this filter can misclassify packets.
+    # 4. Because conntrack/iptables stateful matching is avoided here to prevent extra
+    #    dependencies, this remains a stateless approximation.
     tc filter add dev "$iface" parent 1: protocol ip prio 2 \
         u32 match ip protocol 6 0xff \
         match u8 0x10 0x10 at nexthdr+13 \

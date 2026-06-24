@@ -237,6 +237,10 @@ reset_dns() {
 
         if [[ -n "$iface" ]]; then
             resolvectl revert "$iface" 2>/dev/null || true
+            # Force NetworkManager to re-apply connection settings to re-push DHCP DNS
+            if command -v nmcli &>/dev/null; then
+                nmcli device reapply "$iface" 2>/dev/null || true
+            fi
             log_success "DNS on $iface reverted to DHCP defaults."
         fi
     else

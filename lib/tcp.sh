@@ -61,6 +61,14 @@ apply_sysctl() {
 }
 
 optimize_tcp() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        log_header "TCP Stack Optimization [DRY RUN]"
+        log_info "Would back up current TCP settings to $SYSCTL_BACKUP_FILE"
+        log_info "Would enable fq qdisc and BBR congestion control if available"
+        log_info "Would tune TCP windows, keepalive, and timeouts"
+        return 0
+    fi
+
     require_root
 
     log_header "TCP Stack Optimization"
@@ -133,6 +141,12 @@ get_tcp_status() {
 }
 
 reset_tcp() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        log_header "TCP Stack Reset [DRY RUN]"
+        log_info "Would restore TCP settings from backup file ($SYSCTL_BACKUP_FILE) if it exists, or apply default values"
+        return 0
+    fi
+
     require_root
 
     if [[ -f "$SYSCTL_BACKUP_FILE" ]]; then

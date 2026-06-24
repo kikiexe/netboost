@@ -31,16 +31,46 @@
 readonly QOS_RATE_KBIT="${NETBOOST_QOS_RATE:-15000}"
 
 setup_qos() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        local iface="$WIFI_INTERFACE"
+        if [[ -z "$iface" ]]; then
+            detect_wifi_interface || return 1
+            iface="$WIFI_INTERFACE"
+        fi
+        log_header "Local Traffic Prioritization (QoS) [DRY RUN]"
+        if ! command -v tc &>/dev/null; then
+            log_error "Validation failed: 'tc' command (iproute2) is not installed."
+            return 1
+        fi
+        if [[ ! -d "/sys/class/net/$iface" ]]; then
+            log_error "Validation failed: interface $iface does not exist in /sys/class/net."
+            return 1
+        fi
+        log_info "Would configure HTB on interface: $iface (rate: ${QOS_RATE_KBIT} kbit/s)"
+        log_success "QoS validation successful (dry-run)."
+        return 0
+    fi
+
     require_root
 
     local iface="$WIFI_INTERFACE"
     if [[ -z "$iface" ]]; then
-        detect_wifi_interface
+        detect_wifi_interface || return 1
         iface="$WIFI_INTERFACE"
     fi
 
     if [[ -z "$iface" ]]; then
         log_error "No Wi-Fi interface found for QoS."
+        return 1
+    fi
+
+    if ! command -v tc &>/dev/null; then
+        log_error "Failed to configure QoS: 'tc' tool not found. Please install iproute2."
+        return 1
+    fi
+
+    if [[ ! -d "/sys/class/net/$iface" ]]; then
+        log_error "Failed to configure QoS: network interface $iface does not exist."
         return 1
     fi
 
@@ -56,7 +86,7 @@ setup_qos() {
 
     # Root qdisc: HTB, unclassified traffic defaults to bulk (1:30)
     if ! tc qdisc add dev "$iface" root handle 1: htb default 30 2>/dev/null; then
-        log_error "Failed to create root HTB qdisc. Is 'tc' available?"
+        log_error "Failed to create root HTB qdisc."
         set -e
         return 1
     fi
@@ -143,7 +173,7 @@ get_qos_status() {
 
     local iface="$WIFI_INTERFACE"
     if [[ -z "$iface" ]]; then
-        detect_wifi_interface
+        detect_wifi_interface || return 1
         iface="$WIFI_INTERFACE"
     fi
 
@@ -153,7 +183,7 @@ get_qos_status() {
     fi
 
     local root_qdisc
-    root_qdisc=$(tc qdisc show dev "$iface" 2>/dev/null | head -n 1)
+    root_qdisc=$(tc qdisc show dev "$iface" 2>/dev/null | head -n 1 || true)
 
     if echo "$root_qdisc" | grep -q "htb"; then
         log_success "QoS is ${GREEN}ACTIVE${NC} on $iface"
@@ -162,7 +192,7 @@ get_qos_status() {
         echo -e "  ${DIM}Class statistics:${NC}"
         tc -s class show dev "$iface" 2>/dev/null | while IFS= read -r line; do
             echo "    $line"
-        done
+        done || true
     else
         log_warn "QoS is ${YELLOW}INACTIVE${NC} on $iface."
         print_kv "Current root qdisc" "$root_qdisc"
@@ -170,16 +200,27 @@ get_qos_status() {
 }
 
 reset_qos() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        local iface="$WIFI_INTERFACE"
+        if [[ -z "$iface" ]]; then
+            detect_wifi_interface || return 1
+            iface="$WIFI_INTERFACE"
+        fi
+        log_header "QoS Reset [DRY RUN]"
+        log_info "Would remove HTB qdisc and restore default rules from: $iface"
+        return 0
+    fi
+
     require_root
 
     local iface="$WIFI_INTERFACE"
     if [[ -z "$iface" ]]; then
-        detect_wifi_interface
+        detect_wifi_interface || return 1
         iface="$WIFI_INTERFACE"
     fi
 
     if [[ -n "$iface" ]]; then
-        tc qdisc del dev "$iface" root 2>/dev/null
+        tc qdisc del dev "$iface" root 2>/dev/null || true
         log_success "QoS rules removed from $iface. Default qdisc restored."
     fi
 }

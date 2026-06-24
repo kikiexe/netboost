@@ -12,7 +12,7 @@
 WIFI_INTERFACE=""
 
 detect_wifi_interface() {
-    WIFI_INTERFACE=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2}' | head -n 1)
+    WIFI_INTERFACE=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2}' | head -n 1 || true)
     if [[ -z "$WIFI_INTERFACE" ]]; then
         log_error "No wireless interface detected."
         return 1
@@ -24,7 +24,7 @@ get_wifi_status() {
     detect_wifi_interface || return 1
 
     local link_info
-    link_info=$(iw dev "$WIFI_INTERFACE" link 2>/dev/null)
+    link_info=$(iw dev "$WIFI_INTERFACE" link 2>/dev/null || true)
 
     if echo "$link_info" | grep -q "Not connected"; then
         log_warn "Wi-Fi interface $WIFI_INTERFACE is not connected."
@@ -32,15 +32,15 @@ get_wifi_status() {
     fi
 
     local ssid signal rx_bitrate tx_bitrate frequency bssid
-    ssid=$(echo "$link_info" | grep "SSID:" | awk '{$1=""; print $0}' | xargs)
-    signal=$(echo "$link_info" | grep "signal:" | awk '{print $2, $3}')
-    rx_bitrate=$(echo "$link_info" | grep "rx bitrate:" | sed 's/.*rx bitrate: //')
-    tx_bitrate=$(echo "$link_info" | grep "tx bitrate:" | sed 's/.*tx bitrate: //')
-    frequency=$(echo "$link_info" | grep "freq:" | awk '{print $2}')
-    bssid=$(echo "$link_info" | grep "Connected to" | awk '{print $3}')
+    ssid=$(echo "$link_info" | grep "SSID:" | awk '{$1=""; print $0}' | xargs || true)
+    signal=$(echo "$link_info" | grep "signal:" | awk '{print $2, $3}' || true)
+    rx_bitrate=$(echo "$link_info" | grep "rx bitrate:" | sed 's/.*rx bitrate: //' || true)
+    tx_bitrate=$(echo "$link_info" | grep "tx bitrate:" | sed 's/.*tx bitrate: //' || true)
+    frequency=$(echo "$link_info" | grep "freq:" | awk '{print $2}' || true)
+    bssid=$(echo "$link_info" | grep "Connected to" | awk '{print $3}' || true)
 
     local power_save
-    power_save=$(iw dev "$WIFI_INTERFACE" get power_save 2>/dev/null | awk '{print $3}')
+    power_save=$(iw dev "$WIFI_INTERFACE" get power_save 2>/dev/null | awk '{print $3}' || true)
 
     # Determine signal quality label
     local signal_num="${signal%% *}"
@@ -67,6 +67,13 @@ get_wifi_status() {
 }
 
 optimize_wifi() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        detect_wifi_interface || return 1
+        log_header "Wi-Fi Adapter Optimization [DRY RUN]"
+        log_info "Would disable power save on interface: $WIFI_INTERFACE"
+        return 0
+    fi
+
     require_root
     detect_wifi_interface || return 1
 
@@ -74,10 +81,13 @@ optimize_wifi() {
 
     # 1. Disable power save
     local current_ps
-    current_ps=$(iw dev "$WIFI_INTERFACE" get power_save 2>/dev/null | awk '{print $3}')
+    current_ps=$(iw dev "$WIFI_INTERFACE" get power_save 2>/dev/null | awk '{print $3}' || true)
     if [[ "$current_ps" == "on" ]]; then
-        iw dev "$WIFI_INTERFACE" set power_save off 2>/dev/null
-        if [[ $? -eq 0 ]]; then
+        iw dev "$WIFI_INTERFACE" set power_save off 2>/dev/null || true
+        # Verify if it was successfully changed
+        local check_ps
+        check_ps=$(iw dev "$WIFI_INTERFACE" get power_save 2>/dev/null | awk '{print $3}' || true)
+        if [[ "$check_ps" == "off" ]]; then
             log_success "Power save disabled."
         else
             log_error "Failed to disable power save."
@@ -89,15 +99,22 @@ optimize_wifi() {
     # 2. Report current regulatory domain for awareness
     if command -v iw &>/dev/null; then
         local reg_domain
-        reg_domain=$(iw reg get 2>/dev/null | grep "country" | head -n 1 | awk '{print $2}' | tr -d ':')
+        reg_domain=$(iw reg get 2>/dev/null | grep "country" | head -n 1 | awk '{print $2}' | tr -d ':' || true)
         log_info "Regulatory domain: ${reg_domain:-unknown}"
     fi
 }
 
 reset_wifi() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        detect_wifi_interface || return 1
+        log_header "Wi-Fi Adapter Reset [DRY RUN]"
+        log_info "Would enable power save on interface: $WIFI_INTERFACE"
+        return 0
+    fi
+
     require_root
     detect_wifi_interface || return 1
 
-    iw dev "$WIFI_INTERFACE" set power_save on 2>/dev/null
+    iw dev "$WIFI_INTERFACE" set power_save on 2>/dev/null || true
     log_success "Power save re-enabled (default)."
 }

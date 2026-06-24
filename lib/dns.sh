@@ -22,11 +22,13 @@ measure_dns_latency() {
 
     local start_ns end_ns elapsed_ms
     start_ns=$(date +%s%N)
-    nslookup "$domain" "$server" >/dev/null 2>&1
-    end_ns=$(date +%s%N)
-
-    elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
-    echo "$elapsed_ms"
+    if nslookup "$domain" "$server" >/dev/null 2>&1; then
+        end_ns=$(date +%s%N)
+        elapsed_ms=$(( (end_ns - start_ns) / 1000000 ))
+        echo "$elapsed_ms"
+    else
+        echo "999"
+    fi
 }
 
 benchmark_dns_providers() {
@@ -73,6 +75,21 @@ benchmark_dns_providers() {
 }
 
 optimize_dns() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        local iface="$WIFI_INTERFACE"
+        if [[ -z "$iface" ]]; then
+            detect_wifi_interface || return 1
+            iface="$WIFI_INTERFACE"
+        fi
+        log_header "DNS Optimization [DRY RUN]"
+        if systemctl is-active systemd-resolved >/dev/null 2>&1; then
+            log_info "systemd-resolved is active. Would configure resolvectl on $iface"
+        else
+            log_info "systemd-resolved is not active. Would skip resolv.conf changes"
+        fi
+        return 0
+    fi
+
     require_root
 
     log_header "DNS Optimization"
@@ -83,7 +100,7 @@ optimize_dns() {
 
         local iface="$WIFI_INTERFACE"
         if [[ -z "$iface" ]]; then
-            detect_wifi_interface
+            detect_wifi_interface || return 1
             iface="$WIFI_INTERFACE"
         fi
 
@@ -92,16 +109,19 @@ optimize_dns() {
             return 1
         fi
 
-        resolvectl dns "$iface" 1.1.1.1 1.0.0.1 2>/dev/null
-        if [[ $? -eq 0 ]]; then
+        resolvectl dns "$iface" 1.1.1.1 1.0.0.1 2>/dev/null || true
+        # Verify
+        local check_dns
+        check_dns=$(resolvectl status "$iface" 2>/dev/null | grep "DNS Servers" | sed 's/.*: //' || true)
+        if [[ "$check_dns" =~ "1.1.1.1" ]]; then
             log_success "DNS on $iface set to Cloudflare (1.1.1.1, 1.0.0.1)."
         else
-            log_error "resolvectl failed. Try manually: resolvectl dns $iface 1.1.1.1 1.0.0.1"
+            log_error "resolvectl configuration check failed."
             return 1
         fi
 
         # Optionally enable DNS over TLS for privacy
-        resolvectl dnsovertls "$iface" opportunistic 2>/dev/null
+        resolvectl dnsovertls "$iface" opportunistic 2>/dev/null || true
         log_info "DNS-over-TLS set to opportunistic mode."
     else
         log_warn "systemd-resolved not active. Direct /etc/resolv.conf editing is risky."
@@ -141,17 +161,28 @@ get_dns_status() {
 }
 
 reset_dns() {
+    if [[ "${DRY_RUN:-0}" -eq 1 ]]; then
+        local iface="$WIFI_INTERFACE"
+        if [[ -z "$iface" ]]; then
+            detect_wifi_interface || return 1
+            iface="$WIFI_INTERFACE"
+        fi
+        log_header "DNS Reset [DRY RUN]"
+        log_info "Would revert resolvectl configuration on: $iface"
+        return 0
+    fi
+
     require_root
 
     if systemctl is-active systemd-resolved >/dev/null 2>&1; then
         local iface="$WIFI_INTERFACE"
         if [[ -z "$iface" ]]; then
-            detect_wifi_interface
+            detect_wifi_interface || return 1
             iface="$WIFI_INTERFACE"
         fi
 
         if [[ -n "$iface" ]]; then
-            resolvectl revert "$iface" 2>/dev/null
+            resolvectl revert "$iface" 2>/dev/null || true
             log_success "DNS on $iface reverted to DHCP defaults."
         fi
     else

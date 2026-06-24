@@ -17,7 +17,7 @@ monitor_network() {
 
     local iface="$WIFI_INTERFACE"
     if [[ -z "$iface" ]]; then
-        detect_wifi_interface
+        detect_wifi_interface || return 1
         iface="$WIFI_INTERFACE"
     fi
 
@@ -27,7 +27,7 @@ monitor_network() {
     fi
 
     local gw
-    gw=$(ip route | grep default | awk '{print $3}' | head -n 1)
+    gw=$(ip route 2>/dev/null | grep default | awk '{print $3}' | head -n 1 || true)
 
     echo ""
     log_info "Monitoring ${BOLD}${iface}${NC} every ${interval}s. Press ${BOLD}Ctrl+C${NC} to stop."
@@ -52,20 +52,23 @@ monitor_network() {
 
         # Signal strength
         local signal
-        signal=$(iw dev "$iface" link 2>/dev/null | grep "signal:" | awk '{print $2}')
+        signal=$(iw dev "$iface" link 2>/dev/null | grep "signal:" | awk '{print $2}' || true)
+        if [[ -z "$signal" ]]; then
+            signal="N/A"
+        fi
 
         # Latency to gateway (1 ping, 2s timeout)
         local gw_latency="N/A"
         if [[ -n "$gw" ]]; then
             gw_latency=$(ping -c 1 -W 2 "$gw" 2>/dev/null \
-                | grep "time=" | sed 's/.*time=//;s/ *$//')
+                | grep "time=" | sed 's/.*time=//;s/ *$//' || true)
             [[ -z "$gw_latency" ]] && gw_latency="${RED}TIMEOUT${NC}"
         fi
 
         # Latency to external DNS
         local ext_latency
         ext_latency=$(ping -c 1 -W 2 8.8.8.8 2>/dev/null \
-            | grep "time=" | sed 's/.*time=//;s/ *$//')
+            | grep "time=" | sed 's/.*time=//;s/ *$//' || true)
         [[ -z "$ext_latency" ]] && ext_latency="${RED}TIMEOUT${NC}"
 
         # Throughput from kernel byte counters

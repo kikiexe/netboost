@@ -25,6 +25,8 @@ source "${LIB_DIR}/qos.sh"
 source "${LIB_DIR}/monitor.sh"
 
 readonly VERSION="1.0.0"
+DRY_RUN=0
+
 
 show_banner() {
     echo -e "${BOLD}${CYAN}"
@@ -71,9 +73,14 @@ show_usage() {
 }
 
 cmd_optimize() {
-    require_root
-    show_banner
-    log_info "Applying all optimizations..."
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        show_banner
+        log_info "Running in DRY RUN mode (simulating actions)..."
+    else
+        require_root
+        show_banner
+        log_info "Applying all optimizations..."
+    fi
 
     optimize_wifi
     optimize_tcp
@@ -81,34 +88,38 @@ cmd_optimize() {
     setup_qos
 
     log_header "Optimization Complete"
-    log_success "All optimizations applied successfully."
-    log_info "Run ${BOLD}netboost status${NC} to verify."
-    log_info "Run ${BOLD}netboost monitor${NC} to observe the effect in real-time."
-    log_info "Run ${BOLD}sudo netboost reset${NC} to revert all changes."
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        log_success "All dry-run optimizations simulated successfully."
+    else
+        log_success "All optimizations applied successfully."
+        log_info "Run ${BOLD}netboost status${NC} to verify."
+        log_info "Run ${BOLD}netboost monitor${NC} to observe the effect in real-time."
+        log_info "Run ${BOLD}sudo netboost reset${NC} to revert all changes."
+    fi
 }
 
 cmd_status() {
     show_banner
     log_info "Current network optimization state:"
 
-    get_wifi_status
-    get_tcp_status
-    get_dns_status
-    get_qos_status
+    get_wifi_status || true
+    get_tcp_status || true
+    get_dns_status || true
+    get_qos_status || true
 
     # Quick latency check
     log_header "Quick Latency Check"
     local gw
-    gw=$(ip route | grep default | awk '{print $3}' | head -n 1)
+    gw=$(ip route 2>/dev/null | grep default | awk '{print $3}' | head -n 1 || true)
     if [[ -n "$gw" ]]; then
         local gw_ping
-        gw_ping=$(ping -c 3 -W 2 "$gw" 2>/dev/null | tail -n 1)
-        print_kv "Gateway ($gw)" "$gw_ping"
+        gw_ping=$(ping -c 3 -W 2 "$gw" 2>/dev/null | tail -n 1 || true)
+        print_kv "Gateway ($gw)" "${gw_ping:-TIMEOUT}"
     fi
 
     local ext_ping
-    ext_ping=$(ping -c 3 -W 2 8.8.8.8 2>/dev/null | tail -n 1)
-    print_kv "Internet (8.8.8.8)" "$ext_ping"
+    ext_ping=$(ping -c 3 -W 2 8.8.8.8 2>/dev/null | tail -n 1 || true)
+    print_kv "Internet (8.8.8.8)" "${ext_ping:-TIMEOUT}"
 }
 
 cmd_monitor() {
@@ -142,15 +153,36 @@ main() {
     local command="${1:-help}"
     shift 2>/dev/null || true
 
+    local d="-"
+    local dd="${d}${d}dry-run"
+    local hh="${d}${d}help"
+    local vv="${d}${d}version"
+
+    if [[ "$command" == "$hh" ]]; then
+        command="help"
+    elif [[ "$command" == "$vv" ]]; then
+        command="version"
+    fi
+
+    DRY_RUN=0
+    local pass_args=()
+    for arg in "$@"; do
+        if [[ "$arg" == "$dd" ]] || [[ "$arg" == "dry-run" ]] || [[ "$arg" == "-d" ]]; then
+            DRY_RUN=1
+        else
+            pass_args+=("$arg")
+        fi
+    done
+
     case "$command" in
         optimize)   cmd_optimize ;;
         status)     cmd_status ;;
-        monitor)    cmd_monitor "$@" ;;
+        monitor)    cmd_monitor "${pass_args[@]}" ;;
         benchmark)  cmd_benchmark ;;
         reset)      cmd_reset ;;
-        help|--help|-h)
+        help|-h)
                     show_usage ;;
-        version|--version|-v)
+        version|-v)
                     echo "netboost v${VERSION}" ;;
         *)
             log_error "Unknown command: $command"

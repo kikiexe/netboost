@@ -79,7 +79,7 @@ add this to your crontab:
 ```bash
 sudo crontab -e
 # Add this line:
-@reboot /home/kikiexe/Projects/netboost/netboost.sh optimize
+@reboot /usr/local/bin/netboost optimize
 ```
 
 ## Project structure

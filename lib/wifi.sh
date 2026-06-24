@@ -10,8 +10,8 @@
 # ============================================================================
 
 WIFI_INTERFACE=""
-readonly WIFI_BACKUP_FILE="/tmp/netboost_wifi_backup.conf"
-readonly WIFI_TXPOWER_BACKUP_FILE="/tmp/netboost_wifi_txpower_backup.conf" # Legacy cleanup path
+readonly WIFI_BACKUP_FILE="${NETBOOST_STATE_DIR}/wifi_backup.conf"
+readonly WIFI_TXPOWER_BACKUP_FILE="${NETBOOST_STATE_DIR}/wifi_txpower_backup.conf" # Legacy cleanup path
 
 detect_wifi_interface() {
     WIFI_INTERFACE=$(iw dev 2>/dev/null | awk '$1=="Interface"{print $2}' | head -n 1 || true)
@@ -90,6 +90,7 @@ optimize_wifi() {
     current_ps=$(iw dev "$WIFI_INTERFACE" get power_save 2>/dev/null | awk '{print $3}' || true)
     
     if [[ -n "$current_ps" ]]; then
+        ensure_backup_dir
         if [[ ! -f "$WIFI_BACKUP_FILE" ]]; then
             echo "$current_ps" > "$WIFI_BACKUP_FILE"
             log_info "Original Wi-Fi power save state ($current_ps) saved to $WIFI_BACKUP_FILE"

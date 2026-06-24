@@ -12,6 +12,8 @@
 
 set -euo pipefail
 
+export PATH="/usr/sbin:/usr/bin:/sbin:/bin"
+
 REAL_SCRIPT="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(cd "$(dirname "$REAL_SCRIPT")" && pwd)"
 LIB_DIR="${SCRIPT_DIR}/lib"
@@ -29,11 +31,10 @@ DRY_RUN=0
 FORCE_OPTIMIZE=0
 
 
-
 show_banner() {
     echo -e "${BOLD}${CYAN}"
     cat << 'BANNER'
-             _   _                     _
+            _   _                     _
  _ __   ___| |_| |__   ___   ___  ___| |_
 | '_ \ / _ \ __| '_ \ / _ \ / _ \/ __| __|
 | | | |  __/ |_| |_) | (_) | (_) \__ \ |_

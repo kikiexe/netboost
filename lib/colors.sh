@@ -48,3 +48,13 @@ require_root() {
         exit 1
     fi
 }
+
+readonly NETBOOST_STATE_DIR="/var/lib/netboost"
+
+ensure_backup_dir() {
+    if [[ ! -d "$NETBOOST_STATE_DIR" ]]; then
+        mkdir -p "$NETBOOST_STATE_DIR"
+        chown root:root "$NETBOOST_STATE_DIR"
+        chmod 700 "$NETBOOST_STATE_DIR"
+    fi
+}

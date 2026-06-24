@@ -18,7 +18,7 @@
 #     are freed sooner.
 # ============================================================================
 
-readonly SYSCTL_BACKUP_FILE="/tmp/netboost_sysctl_backup.conf"
+readonly SYSCTL_BACKUP_FILE="${NETBOOST_STATE_DIR}/sysctl_backup.conf"
 
 backup_sysctl_params() {
     local params=(
@@ -38,6 +38,7 @@ backup_sysctl_params() {
         "net.ipv4.tcp_notsent_lowat"
     )
 
+    ensure_backup_dir
     : > "$SYSCTL_BACKUP_FILE"
     for param in "${params[@]}"; do
         local value
@@ -98,16 +99,16 @@ optimize_tcp() {
     apply_sysctl "net.ipv4.tcp_mtu_probing" "1" \
         "MTU probing enabled."
 
-    # Buffer sizes: min=4KB / default=256KB / max=16MB (read), 16MB (write)
-    # Sized for claiming maximum bandwidth on high-speed networks.
-    apply_sysctl "net.ipv4.tcp_rmem" "4096 262144 16777216" \
-        "TCP read buffer optimized (4K/256K/16M)."
-    apply_sysctl "net.ipv4.tcp_wmem" "4096 131072 16777216" \
-        "TCP write buffer optimized (4K/128K/16M)."
-    apply_sysctl "net.core.rmem_max" "16777216" \
-        "Max socket read buffer set to 16MB."
-    apply_sysctl "net.core.wmem_max" "16777216" \
-        "Max socket write buffer set to 16MB."
+    # Buffer sizes: min=4KB / default=256KB / max=8MB (read), 8MB (write)
+    # Sized for high speed networks with memory safety in mind.
+    apply_sysctl "net.ipv4.tcp_rmem" "4096 262144 8388608" \
+        "TCP read buffer optimized (4K/256K/8M)."
+    apply_sysctl "net.ipv4.tcp_wmem" "4096 131072 8388608" \
+        "TCP write buffer optimized (4K/128K/8M)."
+    apply_sysctl "net.core.rmem_max" "8388608" \
+        "Max socket read buffer set to 8MB."
+    apply_sysctl "net.core.wmem_max" "8388608" \
+        "Max socket write buffer set to 8MB."
 
     # Limit unsent queued data to prevent socket bufferbloat and make BBR pacing highly responsive.
     apply_sysctl "net.ipv4.tcp_notsent_lowat" "16384" \
